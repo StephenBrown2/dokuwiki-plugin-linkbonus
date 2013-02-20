@@ -1,0 +1,238 @@
+<?php
+/**
+ @file       linkbonus/syntax/base.php
+ @brief      Base syntax component for Linkbonus plugin.
+ @license    GPL 2 (http://www.gnu.org/licenses/gpl.html)
+ @author     Luis Machuca Bezzaza <luis.machuca [at] gulix.cl>
+ @version    0.04
+**/
+
+if(!defined('DW_LF')) define('DW_LF',"\n");
+
+if(!defined('DOKU_INC')) define('DOKU_INC',realpath(dirname(__FILE__).'/../../').'/');
+if(!defined('DOKU_PLUGIN')) define('DOKU_PLUGIN',DOKU_INC.'lib/plugins/');
+if(!defined('POWERLINKS_DIR')) define('POWERLINKS_DIR',DOKU_INC.'lib/plugins/powerlinks/');
+if(!defined('DOKU_FVDIR')) define('DOKU_FVDIR',POWERLINKS_DIR.'favicons/');
+
+require_once(DOKU_PLUGIN.'syntax.php');
+require_once(DOKU_INC. 'inc/init.php'); // for getBaseURL
+
+/**
+ * All DokuWiki plugins to extend the parser/rendering mechanism
+ * need to inherit from this class
+ */
+class syntax_plugin_powerlinks_interwiki extends DokuWiki_Syntax_Plugin {
+
+    var $helper = null;
+    var $interwiki = array();
+
+    private $_url_regex = '[a-zA-Z0-9\.]+>[^\|\]]+';
+    private $_features  = array ('fetchname','doa','title');
+
+    /**
+     * Constructor. Load helper plugin
+     */
+    function syntax_plugin_powerlinks_interwiki(){
+      $this->helper =& plugin_load('helper', 'powerlinks');
+      if(!$this->helper) msg('Can not load powerlinks helper -- check that plugin is correctly installed.',-1);
+      $this->interwiki = getInterwiki();
+      }
+
+    /**
+     * return some info
+     */
+    function getInfo() {
+      return $this->helper->syntax_getInfo();
+      }
+
+    function getType() { 
+      return $this->helper->syntax_getType();
+      }
+
+    function getSort() { 
+      return 200; // must be lower than external's.
+      }
+
+    function getAllowedTypes() { 
+      return array();
+      }
+
+    function connectTo($mode) { 
+      /**
+       * pattern information 
+       * the pattern is @/path/to/page|name|title|param1=val1|param2=val2|...|
+       */
+      $REGEX     = '\[\['.$this->_url_regex. '\|(?!\{)[^\|\]]+\|' .'.*?(?<!\\\\)\]\]';
+      $this->Lexer->addSpecialPattern(
+        $REGEX,$mode,'plugin_powerlinks_interwiki'); 
+      }
+
+    /**
+     * Handle the match
+     */
+    function handle($match, $state, $pos, &$handler) {
+        /* separate the call into its components */
+        $match = substr ($match, 2, -2).'|'; // correct for preg_split ending with delimiter
+        $data  = preg_split('/(?<!\\\\)\|/', $match);
+        /* Go>uri  |  Text  | key="val" | ... */
+        $link= array();
+        $link['url']     = array_shift($data);
+
+        list ($iw_shortcut, $iw_uri) = explode ('>', $link['url'] );
+        reset ($data);
+        $iw_url= $this->_resolveInterWiki($iw_shortcut, $iw_uri);
+        /* lets check if the 'name' is a medialink, if so, we bail out 
+         */
+        if (preg_match('/{{.+/', $data[0]) ) {
+          $data[0]= '**Image Link**';
+          }
+
+        // unescape the characters pipe (|) and square brackets ([ ])
+        foreach ($data as &$D) {
+          $D= str_replace ('\|', '|', $D);
+          $D= str_replace ('\[', '[', $D);
+          $D= str_replace ('\]', ']', $D);
+          }
+        reset ($data);
+
+
+        $link['name']    = array_shift($data);
+
+        /* if at this point $data is empty, we are dealing with a
+           "normal" dokuwiki link
+        */
+        if (empty($data) || $data[0] == array() ) {
+          $handler->_addCall(
+                    'interwikilink', 
+                    array ( 
+                      $link['url'],
+                      $link['name'], 
+                      strtolower( $iw_shortcut), 
+                      $iw_text 
+                      ), 
+                    $pos);
+          return array();
+          }
+          
+        /* otherwise, we are dealing with extended link,
+           let's check the rest of the parameters 
+        */
+
+        $do        = array(); // list of operations to perform
+        $set       = array(); // {false} if paramenter has not been detected
+        // default link behaviour
+        $link['_type'] = 'interwiki';
+        $link['target']= $conf['target']['wiki'];
+        $link['title'] = htmlspecialchars($link['url']);
+        $class = preg_replace('/[^_\-a-z0-9]+/i','_',$iw_shortcut);
+        $link['class'] = "iw_$class";
+
+        foreach ($data as $D) {
+          list ($key, $val) = explode ('=', $D, 2);
+          if (empty($key) && !empty($val) ) {
+            $key=$val; $val= false;
+            }
+          else $val= substr($val, 1, -1); // remove quotes
+
+          if (!$set[$key] ) {
+            switch ($key) {
+            case 'target':
+              $link['target']= str_replace('_', '', $val); // remove eg.: "_" from "_blank"
+              break;
+
+            case 'title':
+              $link['title']= $val;
+              break;
+
+            case 'fetchname':
+              $link['title_in'] = $val ? $val : 'title';
+              $set['fetchname_method'] = ($this->helper->TitleAged($link['url']) ) ? 'recheck' : 'cache';
+              $docheck = true;
+              break;
+
+            case 'doa':
+              $docheck= true;
+              break;
+
+            default:
+              break; // does nothing
+
+              } // end switch
+            $set[$key] = true;
+            } // end if
+
+          } // end foreach
+
+        /* -----------------------------------------------------------
+           PostProcess some requirements 
+         */
+        $link['url']= $iw_url;
+
+
+        /* if there is any need to fetch external page, do so */
+        $xcontents= '';
+        $xstatus= 0;
+
+        if ($docheck) $set['result_']= $this->helper->getExternalPage($link['url'], $xcontents, $xstatus);
+        else $set['result_']= 'cache';
+        $this->helper->composeLink ($link, $set, array($xcontents, $xstatus) );
+
+       /* -----------------------------------------------------
+          at this point we have all the information required to 
+          ask the Renderer system to create the link */
+      $data= array(
+       'link'   => $link,
+       'match'  => $match,
+       'state'  => $state
+       );
+      return $data;
+      }
+
+    /**
+     * Create output
+     */
+    function render($mode, &$renderer, $data) {
+      return $this->helper->syntax_render 
+             ($mode, $renderer, $data, 'interwiki');
+      }
+
+    /**
+     * @fn    _resolveInterWiki
+     * @brief imported from renderer due to being defined too late in the stage
+     */
+    private function _resolveInterWiki(&$shortcut,$reference){
+        //get interwiki URL
+        if ( isset($this->interwiki[$shortcut]) ) {
+            $url = $this->interwiki[$shortcut];
+        } else {
+            // Default to Google I'm feeling lucky
+            $url = 'http://www.google.com/search?q={URL}&amp;btnI=lucky';
+            $shortcut = 'go';
+        }
+
+        //split into hash and url part
+        list($reference,$hash) = explode('#',$reference,2);
+
+        //replace placeholder
+        if(preg_match('#\{(URL|NAME|SCHEME|HOST|PORT|PATH|QUERY)\}#',$url)){
+            //use placeholders
+            $url = str_replace('{URL}',rawurlencode($reference),$url);
+            $url = str_replace('{NAME}',$reference,$url);
+            $parsed = parse_url($reference);
+            if(!$parsed['port']) $parsed['port'] = 80;
+            $url = str_replace('{SCHEME}',$parsed['scheme'],$url);
+            $url = str_replace('{HOST}',$parsed['host'],$url);
+            $url = str_replace('{PORT}',$parsed['port'],$url);
+            $url = str_replace('{PATH}',$parsed['path'],$url);
+            $url = str_replace('{QUERY}',$parsed['query'],$url);
+        }else{
+            //default
+            $url = $url.rawurlencode($reference);
+        }
+        if($hash) $url .= '#'.rawurlencode($hash);
+
+        return $url;
+    }
+
+}
+

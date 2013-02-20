@@ -1,0 +1,12 @@
+
+.dokuwiki a.doa_ok {
+  }
+
+.dokuwiki a.doa_error {
+  border-bottom: 1px dotted __missing__;
+  }
+
+.dokuwiki a.doa_error:hover {
+  outline: 1px solid __missing__ !important;
+  }
+
