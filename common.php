@@ -61,7 +61,7 @@ class DW_common_linkbonus {
             $domain= parse_url($link['url']);
             $domain= $domain['scheme']. '://'. $domain['host'];
             $fvicon= $domain.'/favicon.ico';
-            $link['more'].= ' style="background-image: url('. $fvicon. ');"';
+            $link['more'].= ' style="background-image: url('. $fvicon. '); background-size: 16px 16px;"';
             }
           $fmt_enabled= $link['format'];
           if ($fmt_enabled) {
