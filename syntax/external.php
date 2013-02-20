@@ -51,7 +51,7 @@ class syntax_plugin_linkbonus_external extends DokuWiki_Syntax_Plugin {
         $namepart  = '[^\|\](?:\{\{|\}\})]+'; // we must NOT catch image links
         $otherpart = '[^\]]+'; 
         $REGEX     = 
-        '\[\[http:\/\/'.$linkpart. '\|'. $namepart. '\|'. $otherpart. '\]\]';
+        '\[\[http:\/\/'.$linkpart. '\|'. $namepart . $otherpart. '\]\]';
         $this->Lexer->addSpecialPattern(
             $REGEX,$mode,'plugin_linkbonus_external'); 
     }
@@ -78,6 +78,11 @@ class syntax_plugin_linkbonus_external extends DokuWiki_Syntax_Plugin {
         $link['name']  = str_replace ('\|', '|', $link['name']);
         $link['title'] = str_replace ('\|', '|', $link['title']);
 
+        /* Check for forced favicon usage */
+        if ($this->getConf('force_link_favicons') == true && !in_array('favicon',$data)) $data[] = 'favicon';
+
+        /* Check for forced doa usage */
+        if ($this->getConf('force_doa') == true && !in_array('doa',$data)) $data[] = 'doa';
 
         /* normal-link sanity check:
            if at this point $data is empty, we are dealing with a
