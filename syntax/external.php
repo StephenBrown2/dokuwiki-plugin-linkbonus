@@ -71,8 +71,8 @@ class syntax_plugin_linkbonus_external extends DokuWiki_Syntax_Plugin {
         $link['name']    = array_shift($data);
         $link['title']   = array_shift($data);
 
-        /* If link-title is empty, use the same contents as link-name */
-        if (empty($link['title']) ) $link['title']= $link['name'];
+        /* If link-title is empty, use the same contents as link-url */
+        if (empty($link['title']) ) $link['title']= $link['url'];
 
         /* Unescape pipes */
         $link['name']  = str_replace ('\|', '|', $link['name']);
