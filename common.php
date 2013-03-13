@@ -58,9 +58,7 @@ class DW_common_linkbonus {
           //$link['name']= substr($link['name'], 4, -5); // remove surrounding <p>..</p>
 
           if (array_key_exists('favicon', $link) && $type==='external' && !DW_common_linkbonus::_isSSL()) {
-            $domain= parse_url($link['url']);
-            $domain= $domain['scheme']. '://'. $domain['host'];
-            $fvicon= $domain.'/favicon.ico';
+            $fvicon= DW_common_linkbonus::_getFavicon($link['url']);
             $link['more'].= ' style="background-image: url('. $fvicon. '); background-size: 16px 16px;"';
             }
           $fmt_enabled= $link['format'];
@@ -190,6 +188,69 @@ class DW_common_linkbonus {
         );
         return $copts;
     } // end function
+
+    static public function _getFavicon($domain) {
+        // Get the root of the domain
+        $elems  = parse_url($domain);
+        $domain = $elems['scheme'].'://'.$elems['host'];
+
+        // Check if the favicon.ico is where it usually is.
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL,$domain.'/favicon.ico');
+        curl_setopt($ch, CURLOPT_HEADER, 1);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER,1);
+        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, 1);
+        curl_setopt($ch, CURLOPT_USERAGENT, "Mozilla/4.0 (compatible; MSIE 5.01; Windows NT 5.0)");
+        curl_exec($ch);
+        $rcode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        if ( $rcode == '200' ) {
+            $favicon = $domain . '/favicon.ico';
+            return $favicon;
+        } else {
+            $ch = curl_init();
+            curl_setopt($ch, CURLOPT_URL,$domain);
+            curl_setopt($ch, CURLOPT_HEADER, 0);
+            curl_setopt($ch, CURLOPT_FOLLOWLOCATION, 1);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER,1);
+            $output = curl_exec($ch);
+            curl_close($ch);
+
+            //$output = file_get_contents("$domain");
+            // If not, we'll parse the DOM and find it
+            $dom = new DOMDocument;
+            $dom->loadHTML($output);
+
+            // Get all 'link' elements that are children of 'head'
+            $linkElements = $dom
+                            ->getElementsByTagName('head')
+                            ->item(0)
+                            ->getElementsByTagName('link');
+
+            foreach($linkElements as $element) {
+                if ( ! $element->hasAttribute('rel')) {
+                    continue;
+                }
+
+                $rel = $element->getAttribute('rel');
+
+                if ( $rel == 'shortcut icon' || $rel == 'icon' ) {
+                    $favicon = $element->getAttribute('href');
+
+                    $favicon_elems = parse_url($favicon);
+
+                    # if relative
+                    if(!isset($favicon_elems['host'])){
+                       $favicon = $domain . '/' . $favicon;
+                    }
+
+                    return $favicon;
+                }
+            }
+        }
+        return '/lib/images/external-link.png';
+    }
 
 
 } // end class
